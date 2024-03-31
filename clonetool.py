@@ -58,9 +58,6 @@ def clone_repositories():
             group_index = int(group_choice) - 1
             selected_groups = [groups[group_index]]
         
-        recursive_choice = input("Do you want to clone recursively? (yes/no): ").lower()
-        recursive_flag = recursive_choice == 'yes'
-        
         for selected_group in selected_groups:
             output_dir = config.get(selected_group, 'output_dir', fallback=None)
             if not output_dir:
@@ -75,15 +72,27 @@ def clone_repositories():
             
             os.makedirs(output_dir, exist_ok=True)
             os.chdir(output_dir)
+
+            bare_choice = input(f"Do you want to clone '{selected_group}' as bare repositories? (yes/no): ").lower()
+            bare_flag = bare_choice == 'yes'
             
-            for url in repo_urls:
-                if recursive_flag:
-                    subprocess.run(['git', 'clone', '--recursive', url.strip()])
-                else:
-                    subprocess.run(['git', 'clone', url.strip()])
-            
-            clear_terminal()
-            print(f"Repositories for group '{selected_group}' cloned successfully{' recursively' if recursive_flag else ''}.")
+            if bare_flag:
+                for url in repo_urls:
+                    subprocess.run(['git', 'clone', '--bare', url.strip()])
+                clear_terminal()
+                print(f"Bare repositories for group '{selected_group}' cloned successfully.")
+            else:
+                recursive_choice = input("Do you want to clone recursively? (yes/no): ").lower()
+                recursive_flag = recursive_choice == 'yes'
+
+                for url in repo_urls:
+                    if recursive_flag:
+                        subprocess.run(['git', 'clone', '--recursive', url.strip()])
+                    else:
+                        subprocess.run(['git', 'clone', url.strip()])
+                
+                clear_terminal()
+                print(f"Repositories for group '{selected_group}' cloned successfully{' recursively' if recursive_flag else ''}.")
     except (ValueError, IndexError):
         print("Invalid group choice. Please enter a valid number or '0' for all groups.")
 
