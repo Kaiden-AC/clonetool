@@ -1,0 +1,3 @@
+img[class*="avatarDecoration"] {
+    content: url("https://cdn.discordapp.com/avatar-decoration-presets/a_c3cffc19e9784f7d0b005eecdf1b566e.png")
+}
