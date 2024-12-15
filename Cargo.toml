@@ -1,0 +1,11 @@
+[package]
+name = "clonetool"
+version = "0.1.0"
+authors = ["Kaiden-AC"]
+edition = "2021"
+
+[dependencies]
+clap = "2.33"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+serde_json = "1.0"
+regex = "1"
