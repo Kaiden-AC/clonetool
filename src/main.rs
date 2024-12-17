@@ -5,8 +5,9 @@ use std::io::{Error, ErrorKind, Write};
 use std::fs;
 use regex::Regex;
 use std::collections::HashSet;
+use serde_json::Value;
 
-fn clone_repositories(usernames: &Vec<String>, dest_dir: &Path, debug: bool, yes: bool, no: bool, exclude: &HashSet<String>) -> Result<(), Error> {
+fn clone_repositories(usernames: &Vec<String>, dest_dir: &Path, debug: bool, yes: bool, no: bool, exclude: &HashSet<String>, provider: &str) -> Result<(), Error> {
     for username in usernames {
         let user_dir = dest_dir.join(username);
 
@@ -15,8 +16,14 @@ fn clone_repositories(usernames: &Vec<String>, dest_dir: &Path, debug: bool, yes
             fs::create_dir_all(&user_dir)?;
         }
 
+        let api_url = match provider {
+            "github" => format!("https://api.github.com/users/{}/repos?per_page=1000", username),
+            "gitlab" => format!("https://gitlab.com/api/v4/users/{}/projects?per_page=1000", username),
+            _ => return Err(Error::new(ErrorKind::InvalidInput, "Invalid provider specified, please use 'github' or 'gitlab'")),
 
-        let api_url = format!("https://api.github.com/users/{}/repos?per_page=1000", username); // max 100 per page
+        };
+
+
         let client = reqwest::blocking::Client::new();
         let response = client.get(&api_url).header("User-Agent", "Rust GitHub Cloner").send();
         match response {
@@ -26,7 +33,7 @@ fn clone_repositories(usernames: &Vec<String>, dest_dir: &Path, debug: bool, yes
                     eprintln!("API request failed for user {}: Status code {}", username, res.status());
                     continue; //skip the user
                 }
-                let repos: Result<Vec<serde_json::Value>, reqwest::Error> = res.json();
+                let repos: Result<Vec<Value>, reqwest::Error> = res.json();
                 match repos {
                     Ok(repos_json) => {
                         if repos_json.is_empty() {
@@ -36,8 +43,20 @@ fn clone_repositories(usernames: &Vec<String>, dest_dir: &Path, debug: bool, yes
 
 
                         for repo in repos_json {
-                            let repo_name = repo["name"].as_str().unwrap_or("");
-                            let clone_url = repo["clone_url"].as_str().unwrap_or("");
+                            let (repo_name, clone_url) = match provider {
+                                "github" => {
+                                    let repo_name = repo["name"].as_str().unwrap_or("");
+                                    let clone_url = repo["clone_url"].as_str().unwrap_or("");
+                                    (repo_name.to_string(), clone_url.to_string())
+                                }
+
+                                "gitlab" => {
+                                    let repo_name = repo["name"].as_str().unwrap_or("");
+                                    let clone_url = repo["http_url_to_repo"].as_str().unwrap_or("");
+                                    (repo_name.to_string(), clone_url.to_string())
+                                }
+                                _ => return Err(Error::new(ErrorKind::InvalidInput, "Invalid provider specified, please use 'github' or 'gitlab'")),
+                            };
 
                             if repo_name.is_empty() || clone_url.is_empty() {
                                 eprintln!("Invalid repo data encountered for user: {}. Skipping...", username);
@@ -50,8 +69,7 @@ fn clone_repositories(usernames: &Vec<String>, dest_dir: &Path, debug: bool, yes
                                 continue; // skip to next repo if it's in the exclude set
                             }
 
-
-                            let repo_path = user_dir.join(repo_name);
+                            let repo_path = user_dir.join(repo_name.clone()); //clone here
                             if repo_path.exists() {
                                 if yes {
                                     if debug { println!("Removing existing directory: {} (automated)", repo_path.display())};
@@ -142,12 +160,12 @@ fn validate_username(username: &str) -> Result<(),Error>{
 fn main() -> Result<(), Error> {
     let matches = App::new("clonetool")
     .version("0.1")
-    .about("Clones all repositories for specified GitHub users/organizations.")
+    .about("Clones all repositories for specified GitHub or GitLab users/organizations.")
     .arg(Arg::with_name("users")
     .short("u")
     .long("users")
     .value_name("USERNAMES")
-    .help("Comma separated list of GitHub usernames or organizations")
+    .help("Comma separated list of GitHub/GitLab usernames or organizations")
     .takes_value(true)
     .required(true)
     )
@@ -180,15 +198,25 @@ fn main() -> Result<(), Error> {
     .help("Comma separated list of packages to exclude in the form user/package,user2/package2")
     .takes_value(true)
     )
+    .arg(Arg::with_name("provider")
+    .long("provider")
+    .value_name("PROVIDER")
+    .help("Provider to use: github or gitlab, default is github")
+    .takes_value(true)
+    .default_value("github")
+    )
     .get_matches();
 
 
     let debug = matches.is_present("debug");
     let yes = matches.is_present("yes");
     let no = matches.is_present("no");
+    let provider = matches.value_of("provider").unwrap();
+
 
     let exclude_str = matches.value_of("exclude").unwrap_or("");
     let exclude: HashSet<String> = exclude_str.split(',').map(|s| s.trim().to_string()).collect();
+
 
     let usernames_str = matches.value_of("users").expect("Users argument is required");
     let usernames: Vec<String> = usernames_str.split(',').map(|s| s.trim().to_string()).collect();
@@ -201,7 +229,7 @@ fn main() -> Result<(), Error> {
     validate_path(dest_dir_str)?;
     let dest_dir = Path::new(dest_dir_str);
 
-    clone_repositories(&usernames, dest_dir, debug, yes, no, &exclude)?;
+    clone_repositories(&usernames, dest_dir, debug, yes, no, &exclude, provider)?;
     Ok(())
 
 }
